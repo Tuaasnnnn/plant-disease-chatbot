@@ -796,100 +796,97 @@ if "last_diagnosis" not in st.session_state:
 if "pending_feedback" not in st.session_state:
     st.session_state.pending_feedback = None
 
-# Sidebar: cho phép tải log phản hồi (dùng để huấn luyện lại model sau này)
-with st.sidebar:
-    st.markdown("### 📋 Dữ liệu phản hồi")
-    st.caption("Log các lượt đánh giá 👍/👎 của người dùng, dùng để cải thiện model trong tương lai.")
-    if os.path.exists(FEEDBACK_LOG_PATH):
-        with open(FEEDBACK_LOG_PATH, "rb") as f:
-            st.download_button("⬇️ Tải feedback_log.csv", f, file_name="feedback_log.csv", mime="text/csv")
-    else:
-        st.caption("_Chưa có phản hồi nào._")
-
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = [
-        {
-            "role": "assistant",
-            "content": (
-                "👋 Chào bạn! Mình là bot nhận diện bệnh trên lá cây.\n\n"
-                "Bạn có thể:\n"
-                "- 📎 **Upload ảnh** lá cây ở khung bên dưới, hoặc **dán link ảnh** vào ô chat\n"
-                "- 💬 **Hỏi thêm bằng chữ** sau khi có kết quả, ví dụ: \"cách chăm sóc thế nào\", "
-                "\"nên mua thuốc gì\"\n"
-                "- 🔥 Mình sẽ kèm ảnh **Grad-CAM** cho thấy vùng lá mà AI tập trung để ra kết luận\n\n"
-                "Mình sẽ phân tích và cho bạn biết cây có bị bệnh không, nguyên nhân và cách xử lý!"
-            ),
-            "image": None,
-        }
-    ]
-
-# Hiển thị lịch sử chat
-for msg in st.session_state.chat_history:
-    with st.chat_message(msg["role"]):
-        if msg.get("image") is not None:
-            st.image(msg["image"], width=250)
-        st.markdown(msg["content"])
-
-# Khu vực upload ảnh (nằm trên khung chat để dễ thao tác trên mobile)
-uploaded_file = st.file_uploader(
-    "📎 Upload ảnh lá cây (hoặc dán link ảnh vào ô chat bên dưới)",
-    type=["jpg", "jpeg", "png", "webp"],
-    key="uploader"
-)
-
-user_text = st.chat_input(
-    "Dán link ảnh, hỏi cách chăm sóc/mua thuốc, hoặc để trống nếu đã upload ảnh ở trên rồi bấm Enter..."
-)
-
 # Xử lý khi có upload ảnh mới hoặc người dùng gửi tin nhắn
 trigger = False
 image_path_to_use = None
 display_image = None
 
 if uploaded_file is not None and st.session_state.get("last_uploaded") != uploaded_file.name:
+
     if uploaded_file.size > MAX_IMAGE_BYTES:
-        st.error(f"⚠️ Ảnh quá lớn ({uploaded_file.size/1024/1024:.1f}MB). Giới hạn 8MB, vui lòng chọn ảnh nhỏ hơn.")
+        st.error(
+            f"⚠️ Ảnh quá lớn ({uploaded_file.size/1024/1024:.1f}MB). "
+            "Giới hạn 8MB, vui lòng chọn ảnh nhỏ hơn."
+        )
+
     else:
-        st.session_state.last_uploaded = uploaded_file.name
-        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(uploaded_file.name)[-1])
+        st.session_state["last_uploaded"] = uploaded_file.name
+
+        tmp = tempfile.NamedTemporaryFile(
+            delete=False,
+            suffix=os.path.splitext(uploaded_file.name)[-1]
+        )
+
         tmp.write(uploaded_file.getvalue())
         tmp.close()
+
         image_path_to_use = tmp.name
         display_image = uploaded_file
         trigger = True
+
+
 elif user_text:
     trigger = True
     display_image = None
 
+
 if trigger:
+
     user_msg_text = user_text if user_text else "(đã upload ảnh)"
+
     st.session_state.chat_history.append({
         "role": "user",
         "content": user_msg_text,
         "image": display_image,
     })
+
+
     with st.chat_message("user"):
+
         if display_image is not None:
             st.image(display_image, width=250)
+
         st.markdown(user_msg_text)
 
+
+
     with st.chat_message("assistant"):
-        has_image_url = bool(user_text and URL_REGEX.search(user_text))
+
+        has_image_url = bool(
+            user_text and URL_REGEX.search(user_text)
+        )
+
         heatmap_img = None
+
+
         if image_path_to_use is None and not has_image_url:
-            # Không có ảnh/link ảnh -> đây là câu hỏi bằng chữ (chăm sóc, mua thuốc...)
+
             with st.spinner("Đang suy nghĩ..."):
                 reply = answer_general_question(user_text)
+
+
         else:
+
             with st.spinner("Đang phân tích ảnh..."):
-                reply, heatmap_img = handle_user_input(image_path=image_path_to_use, url_text=user_text)
+
+                reply, heatmap_img = handle_user_input(
+                    image_path=image_path_to_use,
+                    url_text=user_text
+                )
+
+
         st.markdown(reply)
+
+
         if heatmap_img is not None:
+
             st.image(
                 heatmap_img,
                 width=250,
                 caption="🔥 Vùng ảnh AI tập trung để đưa ra kết luận (Grad-CAM)"
             )
+
+
 
     st.session_state.chat_history.append({
         "role": "assistant",
@@ -897,19 +894,51 @@ if trigger:
         "image": heatmap_img,
     })
 
-    if image_path_to_use and os.path.exists(image_path_to_use):
-        os.remove(image_path_to_use)
 
-# Hiện nút đánh giá 👍/👎 cho lần chẩn đoán gần nhất (đặt ngoài khối trigger để widget không biến mất giữa chừng)
-if st.session_state.pending_feedback is not None:
+    # Xóa ảnh tạm
+    try:
+        if image_path_to_use and os.path.exists(image_path_to_use):
+            os.remove(image_path_to_use)
+    except:
+        pass
+
+
+
+# Hiện nút đánh giá 👍/👎
+if st.session_state.get("pending_feedback") is not None:
+
     pf = st.session_state.pending_feedback
+
     st.divider()
+
     col1, col2 = st.columns([4, 1])
+
     with col1:
-        st.caption(f"Kết quả \"{get_disease_info(pf['class'])['ten_viet']}\" có chính xác không?")
+        st.caption(
+            f"Kết quả \"{get_disease_info(pf['class'])['ten_viet']}\" "
+            "có chính xác không?"
+        )
+
+
     with col2:
-        fb = st.feedback("thumbs", key=f"fb_{len(st.session_state.chat_history)}")
+
+        fb = st.feedback(
+            "thumbs",
+            key="diagnosis_feedback"
+        )
+
+
     if fb is not None:
-        log_feedback(pf["class"], pf["confidence"], "positive" if fb == 1 else "negative")
+
+        log_feedback(
+            pf["class"],
+            pf["confidence"],
+            "positive" if fb == 1 else "negative"
+        )
+
         st.session_state.pending_feedback = None
-        st.success("Cảm ơn phản hồi của bạn! 🙏", icon="✅")
+
+        st.success(
+            "Cảm ơn phản hồi của bạn! 🙏",
+            icon="✅"
+        )
