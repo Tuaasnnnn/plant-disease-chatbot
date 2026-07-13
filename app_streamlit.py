@@ -462,7 +462,6 @@ if st.session_state.pending_feedback is not None:
                 "Cảm ơn phản hồi của bạn! 🙏",
                 icon="✅"
             )
-        )
 """
 Chatbot nhận diện bệnh lá cây - PlantVillage (bản Streamlit)
 Deploy trên Streamlit Community Cloud - chạy 24/7 miễn phí, ổn định.
