@@ -120,6 +120,63 @@ def format_reply(results):
     return reply
 
 
+CARE_KEYWORDS = ["chăm sóc", "cách trị", "cách xử lý", "làm sao", "phải làm gì", "chữa", "điều trị", "khắc phục"]
+BUY_KEYWORDS = ["mua thuốc", "mua ở đâu", "loại thuốc", "thuốc gì", "sản phẩm nào", "mua gì"]
+GREETING_KEYWORDS = ["chào", "hello", "hi ", "bạn là ai", "giúp được gì"]
+
+
+def answer_general_question(text: str) -> str:
+    """Trả lời câu hỏi dạng chữ, dựa trên bệnh vừa chẩn đoán gần nhất (nếu có)."""
+    text_lower = text.lower()
+    last = st.session_state.get("last_diagnosis")
+
+    if any(kw in text_lower for kw in GREETING_KEYWORDS):
+        return (
+            "👋 Chào bạn! Mình là PlantDoc AI. Bạn có thể:\n"
+            "- 📎 Upload ảnh lá cây để mình chẩn đoán bệnh\n"
+            "- 💬 Hoặc hỏi mình về cách chăm sóc/mua thuốc cho bệnh vừa được chẩn đoán"
+        )
+
+    if any(kw in text_lower for kw in CARE_KEYWORDS):
+        if last:
+            return (
+                f"🩺 **Cách chăm sóc/xử lý cho \"{last['ten_viet']}\":**\n\n"
+                f"{last['cach_xu_ly']}\n\n"
+                "_Lưu ý: đây là gợi ý tham khảo từ AI, mức độ nặng nhẹ thực tế nên được "
+                "chuyên gia nông nghiệp đánh giá trực tiếp._"
+            )
+        return (
+            "Bạn muốn hỏi cách chăm sóc cho bệnh nào vậy? Bạn upload ảnh lá cây để mình "
+            "chẩn đoán trước, sau đó mình sẽ tư vấn cách xử lý cụ thể cho đúng bệnh đó nhé."
+        )
+
+    if any(kw in text_lower for kw in BUY_KEYWORDS):
+        if last:
+            return (
+                f"💊 Với **\"{last['ten_viet']}\"**, hướng xử lý gợi ý là:\n\n"
+                f"{last['cach_xu_ly']}\n\n"
+                "Bạn có thể tìm mua các loại thuốc bảo vệ thực vật phù hợp tại **cửa hàng "
+                "vật tư nông nghiệp** gần nhà, hoặc các sàn TMĐT có bán vật tư nông nghiệp uy tín. "
+                "Nên mang theo ảnh lá bệnh khi đi mua để nhân viên tư vấn đúng loại thuốc, "
+                "và đọc kỹ hướng dẫn sử dụng/liều lượng trên bao bì.\n\n"
+                "_Lưu ý: mình không thể tư vấn tên thuốc thương mại cụ thể, vì điều này cần "
+                "chuyên gia đánh giá tình trạng thực tế của cây._"
+            )
+        return (
+            "Bạn muốn mua thuốc cho bệnh nào? Upload ảnh lá cây để mình chẩn đoán trước nhé, "
+            "sau đó mình sẽ gợi ý hướng xử lý phù hợp."
+        )
+
+    # Không khớp intent nào rõ ràng
+    return (
+        "🤔 Mình chưa hiểu rõ câu hỏi này. Mình có thể giúp:\n"
+        "- 📎 Chẩn đoán bệnh từ ảnh lá cây (upload ảnh hoặc dán link ảnh)\n"
+        "- 💬 Tư vấn cách chăm sóc/xử lý cho bệnh vừa chẩn đoán (hỏi \"cách chăm sóc thế nào\")\n"
+        "- 💊 Gợi ý hướng mua thuốc phù hợp (hỏi \"nên mua thuốc gì\")\n\n"
+        "Bạn thử hỏi lại theo 1 trong các hướng trên nhé!"
+    )
+
+
 def handle_user_input(image_path=None, url_text=None):
     """Xử lý 1 lượt hỏi-đáp, trả về (user_display, bot_reply, image_to_show)."""
     img_path = None
@@ -138,6 +195,9 @@ def handle_user_input(image_path=None, url_text=None):
             return "❌ Mình không tìm thấy ảnh hợp lệ. Vui lòng upload ảnh hoặc dán link ảnh kết thúc bằng .jpg/.png..."
 
         results = predict_image(img_path)
+        top1_class, top1_conf = results[0]
+        if top1_conf >= CONFIDENCE_THRESHOLD:
+            st.session_state.last_diagnosis = get_disease_info(top1_class)
         return format_reply(results)
 
     except requests.exceptions.RequestException:
@@ -156,13 +216,19 @@ st.caption(
     "bằng MobileNetV2 (transfer learning)."
 )
 
+if "last_diagnosis" not in st.session_state:
+    st.session_state.last_diagnosis = None
+
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = [
         {
             "role": "assistant",
             "content": (
                 "👋 Chào bạn! Mình là bot nhận diện bệnh trên lá cây.\n\n"
-                "Bạn có thể **upload ảnh** ở khung bên dưới, hoặc **dán link ảnh** vào ô chat. "
+                "Bạn có thể:\n"
+                "- 📎 **Upload ảnh** lá cây ở khung bên dưới, hoặc **dán link ảnh** vào ô chat\n"
+                "- 💬 **Hỏi thêm bằng chữ** sau khi có kết quả, ví dụ: \"cách chăm sóc thế nào\", "
+                "\"nên mua thuốc gì\"\n\n"
                 "Mình sẽ phân tích và cho bạn biết cây có bị bệnh không, nguyên nhân và cách xử lý!"
             ),
             "image": None,
@@ -183,7 +249,9 @@ uploaded_file = st.file_uploader(
     key="uploader"
 )
 
-user_text = st.chat_input("Dán link ảnh vào đây, hoặc để trống nếu đã upload ảnh ở trên rồi bấm Enter...")
+user_text = st.chat_input(
+    "Dán link ảnh, hỏi cách chăm sóc/mua thuốc, hoặc để trống nếu đã upload ảnh ở trên rồi bấm Enter..."
+)
 
 # Xử lý khi có upload ảnh mới hoặc người dùng gửi tin nhắn
 trigger = False
@@ -215,8 +283,14 @@ if trigger:
         st.markdown(user_msg_text)
 
     with st.chat_message("assistant"):
-        with st.spinner("Đang phân tích ảnh..."):
-            reply = handle_user_input(image_path=image_path_to_use, url_text=user_text)
+        has_image_url = bool(user_text and URL_REGEX.search(user_text))
+        if image_path_to_use is None and not has_image_url:
+            # Không có ảnh/link ảnh -> đây là câu hỏi bằng chữ (chăm sóc, mua thuốc...)
+            with st.spinner("Đang suy nghĩ..."):
+                reply = answer_general_question(user_text)
+        else:
+            with st.spinner("Đang phân tích ảnh..."):
+                reply = handle_user_input(image_path=image_path_to_use, url_text=user_text)
         st.markdown(reply)
 
     st.session_state.chat_history.append({
