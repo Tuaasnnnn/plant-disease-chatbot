@@ -1,7 +1,3 @@
-"""
-Chatbot nhận diện bệnh lá cây - PlantVillage (bản Streamlit)
-Deploy trên Streamlit Community Cloud - chạy 24/7 miễn phí, ổn định.
-"""
 
 import os
 import re
@@ -785,9 +781,11 @@ def handle_user_input(image_path=None, url_text=None):
 
 # ============ Giao diện chat ============
 st.title("🌱 PlantDoc AI")
+
 st.caption(
-    "Chatbot nhận diện bệnh lá cây — huấn luyện trên bộ PlantVillage (38 loại cây/bệnh) "
-    "bằng MobileNetV2 (transfer learning)."
+    "Chatbot nhận diện bệnh lá cây — huấn luyện trên PlantVillage (38 lớp) "
+    "bằng MobileNetV2 (transfer learning). "
+    "Deploy trên Streamlit Community Cloud."
 )
 if "last_diagnosis" not in st.session_state:
     st.session_state.last_diagnosis = None
