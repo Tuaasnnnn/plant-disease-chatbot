@@ -43,12 +43,53 @@ model, class_names = load_plant_model()
 
 
 # ============ Hàm xử lý ảnh & dự đoán ============
+import ipaddress
+import socket
+from urllib.parse import urlparse
+
+MAX_IMAGE_BYTES = 8 * 1024 * 1024  # Giới hạn 8MB cho ảnh tải từ URL
+
+
+def is_safe_url(url: str) -> bool:
+    """Chặn URL trỏ tới địa chỉ IP nội bộ/private (chống SSRF)."""
+    try:
+        hostname = urlparse(url).hostname
+        if not hostname:
+            return False
+        if hostname.lower() in ("localhost",):
+            return False
+        ip = socket.gethostbyname(hostname)
+        ip_obj = ipaddress.ip_address(ip)
+        if ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local or ip_obj.is_reserved:
+            return False
+        return True
+    except Exception:
+        return False
+
+
 def download_image_from_url(url: str) -> str:
-    response = requests.get(url, timeout=15)
+    if not is_safe_url(url):
+        raise ValueError("URL không hợp lệ hoặc trỏ tới địa chỉ không được phép.")
+
+    response = requests.get(url, timeout=8, stream=True)
     response.raise_for_status()
+
+    content_length = response.headers.get("Content-Length")
+    if content_length and int(content_length) > MAX_IMAGE_BYTES:
+        raise ValueError("Ảnh quá lớn (giới hạn 8MB).")
+
     suffix = os.path.splitext(url.split("?")[0])[-1] or ".jpg"
     tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
-    tmp_file.write(response.content)
+
+    total = 0
+    for chunk in response.iter_content(chunk_size=8192):
+        total += len(chunk)
+        if total > MAX_IMAGE_BYTES:
+            tmp_file.close()
+            os.remove(tmp_file.name)
+            raise ValueError("Ảnh quá lớn (giới hạn 8MB).")
+        tmp_file.write(chunk)
+
     tmp_file.close()
     return tmp_file.name
 
@@ -200,6 +241,8 @@ def handle_user_input(image_path=None, url_text=None):
             st.session_state.last_diagnosis = get_disease_info(top1_class)
         return format_reply(results)
 
+    except ValueError as e:
+        return f"❌ {str(e)} Bạn thử upload ảnh trực tiếp thay vì dùng link nhé."
     except requests.exceptions.RequestException:
         return "❌ Mình không tải được ảnh từ link đó. Kiểm tra lại link (phải là link ảnh trực tiếp) hoặc thử upload ảnh trực tiếp nhé."
     except Exception as e:
@@ -259,13 +302,16 @@ image_path_to_use = None
 display_image = None
 
 if uploaded_file is not None and st.session_state.get("last_uploaded") != uploaded_file.name:
-    st.session_state.last_uploaded = uploaded_file.name
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(uploaded_file.name)[-1])
-    tmp.write(uploaded_file.getvalue())
-    tmp.close()
-    image_path_to_use = tmp.name
-    display_image = uploaded_file
-    trigger = True
+    if uploaded_file.size > MAX_IMAGE_BYTES:
+        st.error(f"⚠️ Ảnh quá lớn ({uploaded_file.size/1024/1024:.1f}MB). Giới hạn 8MB, vui lòng chọn ảnh nhỏ hơn.")
+    else:
+        st.session_state.last_uploaded = uploaded_file.name
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(uploaded_file.name)[-1])
+        tmp.write(uploaded_file.getvalue())
+        tmp.close()
+        image_path_to_use = tmp.name
+        display_image = uploaded_file
+        trigger = True
 elif user_text:
     trigger = True
     display_image = None
