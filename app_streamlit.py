@@ -789,7 +789,6 @@ st.caption(
     "Chatbot nhận diện bệnh lá cây — huấn luyện trên bộ PlantVillage (38 loại cây/bệnh) "
     "bằng MobileNetV2 (transfer learning)."
 )
-
 if "last_diagnosis" not in st.session_state:
     st.session_state.last_diagnosis = None
 
@@ -800,84 +799,56 @@ if "pending_feedback" not in st.session_state:
 trigger = False
 image_path_to_use = None
 display_image = None
-
 if uploaded_file is not None and st.session_state.get("last_uploaded") != uploaded_file.name:
-
     if uploaded_file.size > MAX_IMAGE_BYTES:
         st.error(
             f"⚠️ Ảnh quá lớn ({uploaded_file.size/1024/1024:.1f}MB). "
             "Giới hạn 8MB, vui lòng chọn ảnh nhỏ hơn."
         )
-
     else:
         st.session_state["last_uploaded"] = uploaded_file.name
-
         tmp = tempfile.NamedTemporaryFile(
             delete=False,
             suffix=os.path.splitext(uploaded_file.name)[-1]
         )
-
         tmp.write(uploaded_file.getvalue())
         tmp.close()
-
         image_path_to_use = tmp.name
         display_image = uploaded_file
         trigger = True
-
 
 elif user_text:
     trigger = True
     display_image = None
 
-
 if trigger:
-
     user_msg_text = user_text if user_text else "(đã upload ảnh)"
-
     st.session_state.chat_history.append({
         "role": "user",
         "content": user_msg_text,
         "image": display_image,
     })
 
-
     with st.chat_message("user"):
-
         if display_image is not None:
             st.image(display_image, width=250)
-
         st.markdown(user_msg_text)
-
-
-
     with st.chat_message("assistant"):
-
         has_image_url = bool(
             user_text and URL_REGEX.search(user_text)
         )
-
         heatmap_img = None
-
-
         if image_path_to_use is None and not has_image_url:
-
             with st.spinner("Đang suy nghĩ..."):
                 reply = answer_general_question(user_text)
-
-
         else:
-
             with st.spinner("Đang phân tích ảnh..."):
 
                 reply, heatmap_img = handle_user_input(
                     image_path=image_path_to_use,
                     url_text=user_text
                 )
-
-
         st.markdown(reply)
-
-
         if heatmap_img is not None:
 
             st.image(
@@ -885,16 +856,11 @@ if trigger:
                 width=250,
                 caption="🔥 Vùng ảnh AI tập trung để đưa ra kết luận (Grad-CAM)"
             )
-
-
-
     st.session_state.chat_history.append({
         "role": "assistant",
         "content": reply,
         "image": heatmap_img,
     })
-
-
     # Xóa ảnh tạm
     try:
         if image_path_to_use and os.path.exists(image_path_to_use):
@@ -902,42 +868,28 @@ if trigger:
     except:
         pass
 
-
-
 # Hiện nút đánh giá 👍/👎
 if st.session_state.get("pending_feedback") is not None:
-
     pf = st.session_state.pending_feedback
-
     st.divider()
-
     col1, col2 = st.columns([4, 1])
-
     with col1:
         st.caption(
             f"Kết quả \"{get_disease_info(pf['class'])['ten_viet']}\" "
             "có chính xác không?"
         )
-
-
     with col2:
-
         fb = st.feedback(
             "thumbs",
             key="diagnosis_feedback"
         )
-
-
     if fb is not None:
-
         log_feedback(
             pf["class"],
             pf["confidence"],
             "positive" if fb == 1 else "negative"
         )
-
         st.session_state.pending_feedback = None
-
         st.success(
             "Cảm ơn phản hồi của bạn! 🙏",
             icon="✅"
