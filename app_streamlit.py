@@ -437,18 +437,20 @@ if trigger:
         os.remove(image_path_to_use)
 
 # Hiện nút đánh giá 👍/👎 cho lần chẩn đoán gần nhất (đặt ngoài khối trigger để widget không biến mất giữa chừng)
-if st.session_state.pending_feedback is not None:
-    pf = st.session_state.pending_feedback
-    st.divider()
-    col1, col2 = st.columns([4, 1])
-    with col1:
-        st.caption(f"Kết quả \"{get_disease_info(pf['class'])['ten_viet']}\" có chính xác không?")
-    with col2:
-        fb = st.feedback("thumbs", key=f"fb_{len(st.session_state.chat_history)}")
+with col2:
+    fb = st.feedback("thumbs", key=f"fb_{len(st.session_state.chat_history)}")
     if fb is not None:
-        log_feedback(pf["class"], pf["confidence"], "positive" if fb == 1 else "negative")
+        log_feedback(
+            pf["class"],
+            pf["confidence"],
+            "positive" if fb == 1 else "negative"
+        )
         st.session_state.pending_feedback = None
-        st.success("Cảm ơn phản hồi của bạn! 🙏", icon="✅")"""
+        st.success(
+            "Cảm ơn phản hồi của bạn! 🙏",
+            icon="✅"
+        )
+"""
 Chatbot nhận diện bệnh lá cây - PlantVillage (bản Streamlit)
 Deploy trên Streamlit Community Cloud - chạy 24/7 miễn phí, ổn định.
 """
