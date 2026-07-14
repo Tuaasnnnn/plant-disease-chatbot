@@ -37,6 +37,53 @@ def log_feedback(pred_class: str, confidence: float, feedback_value: str):
     except Exception:
         pass  # Không để lỗi ghi log làm gián đoạn trải nghiệm chat
 
+# ============ Ánh xạ loại cây -> prefix lớp trong model (dùng để lọc kết quả theo loại cây) ============
+PLANT_PREFIXES = {
+    "🍅 Cà chua": "Tomato___",
+    "🍎 Táo": "Apple___",
+    "🫐 Việt quất": "Blueberry___",
+    "🍒 Cherry": "Cherry_(including_sour)___",
+    "🌽 Ngô/Bắp": "Corn_(maize)___",
+    "🍇 Nho": "Grape___",
+    "🍊 Cam/Quýt": "Orange___",
+    "🍑 Đào": "Peach___",
+    "🫑 Ớt chuông": "Pepper,_bell___",
+    "🥔 Khoai tây": "Potato___",
+    "🍇 Mâm xôi": "Raspberry___",
+    "🌱 Đậu tương": "Soybean___",
+    "🎃 Bí": "Squash___",
+    "🍓 Dâu tây": "Strawberry___",
+}
+
+PLANT_TEXT_KEYWORDS = {
+    "cà chua": "Tomato___", "tomato": "Tomato___",
+    "táo": "Apple___", "apple": "Apple___",
+    "việt quất": "Blueberry___", "blueberry": "Blueberry___",
+    "cherry": "Cherry_(including_sour)___",
+    "ngô": "Corn_(maize)___", "bắp": "Corn_(maize)___", "corn": "Corn_(maize)___",
+    "nho": "Grape___", "grape": "Grape___",
+    "cam": "Orange___", "quýt": "Orange___", "orange": "Orange___",
+    "đào": "Peach___", "peach": "Peach___",
+    "ớt chuông": "Pepper,_bell___", "pepper": "Pepper,_bell___",
+    "khoai tây": "Potato___", "potato": "Potato___",
+    "mâm xôi": "Raspberry___", "raspberry": "Raspberry___",
+    "đậu tương": "Soybean___", "soybean": "Soybean___",
+    "bí": "Squash___", "squash": "Squash___",
+    "dâu tây": "Strawberry___", "strawberry": "Strawberry___",
+}
+
+
+def detect_plant_prefix_from_text(text: str):
+    """Tự động nhận diện loại cây từ câu chữ người dùng gõ (nếu có nhắc tên cây)."""
+    if not text:
+        return None
+    text_lower = text.lower()
+    for keyword, prefix in PLANT_TEXT_KEYWORDS.items():
+        if keyword in text_lower:
+            return prefix
+    return None
+
+
 # ============ Cấu hình trang ============
 st.set_page_config(
     page_title="PlantDoc AI - Nhận diện bệnh lá cây",
@@ -114,13 +161,25 @@ def download_image_from_url(url: str) -> str:
     return tmp_file.name
 
 
-def predict_image(img_path: str, top_k: int = 3):
+def predict_image(img_path: str, top_k: int = 3, plant_prefix: str = None):
     img = keras_image.load_img(img_path, target_size=IMG_SIZE)
     img_array = keras_image.img_to_array(img)
     img_array = np.expand_dims(img_array, axis=0)
     preprocessed = preprocess_input(img_array.copy())
 
     preds = model.predict(preprocessed, verbose=0)[0]
+
+    if plant_prefix:
+        matched_indices = [i for i, name in enumerate(class_names) if name.startswith(plant_prefix)]
+        if matched_indices:
+            subset_preds = preds[matched_indices]
+            total = subset_preds.sum()
+            if total > 0:
+                normalized = subset_preds / total  # xác suất có điều kiện: P(bệnh | đúng loại cây này)
+                order = normalized.argsort()[::-1][:top_k]
+                results = [(class_names[matched_indices[o]], float(normalized[o])) for o in order]
+                return results, img, preprocessed
+
     top_indices = preds.argsort()[-top_k:][::-1]
     results = [(class_names[i], float(preds[i])) for i in top_indices]
     return results, img, preprocessed
@@ -167,7 +226,7 @@ def generate_gradcam(preprocessed_img, pred_index, original_img_pil, alpha=0.45)
 CONFIDENCE_THRESHOLD = 0.60  # Dưới ngưỡng này, cảnh báo model không chắc chắn
 
 
-def format_reply(results):
+def format_reply(results, filtered_by_plant=False):
     top1_class, top1_conf = results[0]
     info = get_disease_info(top1_class)
     is_healthy = "healthy" in top1_class.lower()
@@ -192,7 +251,8 @@ def format_reply(results):
         return reply
 
     reply = f"🔍 **Kết quả nhận diện:** {info['ten_viet']}\n\n"
-    reply += f"📊 **Độ tin cậy:** {top1_conf*100:.1f}%\n\n"
+    reply += f"📊 **Độ tin cậy:** {top1_conf*100:.1f}%"
+    reply += "  _(đã giới hạn trong loại cây bạn chỉ định)_\n\n" if filtered_by_plant else "\n\n"
 
     if is_healthy:
         reply += "✅ Lá cây có vẻ khỏe mạnh, không phát hiện dấu hiệu bệnh rõ ràng.\n\n"
@@ -277,10 +337,14 @@ def answer_general_question(text: str) -> str:
     )
 
 
-def handle_user_input(image_path=None, url_text=None):
+def handle_user_input(image_path=None, url_text=None, plant_prefix=None):
     """Xử lý 1 lượt hỏi-đáp, trả về (bot_reply, heatmap_image_hoặc_None)."""
     img_path = None
     temp_to_cleanup = None
+
+    # Nếu chưa chỉ định loại cây qua ô chọn, thử tự nhận diện từ chữ người dùng gõ
+    if plant_prefix is None:
+        plant_prefix = detect_plant_prefix_from_text(url_text)
 
     try:
         if image_path is not None:
@@ -294,7 +358,7 @@ def handle_user_input(image_path=None, url_text=None):
         if img_path is None:
             return "❌ Mình không tìm thấy ảnh hợp lệ. Vui lòng upload ảnh hoặc dán link ảnh kết thúc bằng .jpg/.png...", None
 
-        results, original_img, preprocessed = predict_image(img_path)
+        results, original_img, preprocessed = predict_image(img_path, plant_prefix=plant_prefix)
         top1_class, top1_conf = results[0]
 
         # Lưu lại để hiện nút phản hồi 👍/👎 sau khi trả lời xong
@@ -306,7 +370,7 @@ def handle_user_input(image_path=None, url_text=None):
             top1_index = class_names.index(top1_class)
             heatmap_img = generate_gradcam(preprocessed, top1_index, original_img)
 
-        return format_reply(results), heatmap_img
+        return format_reply(results, filtered_by_plant=bool(plant_prefix)), heatmap_img
 
     except ValueError as e:
         return f"❌ {str(e)} Bạn thử upload ảnh trực tiếp thay vì dùng link nhé.", None
@@ -349,6 +413,7 @@ if "chat_history" not in st.session_state:
             "content": (
                 "👋 Chào bạn! Mình là bot nhận diện bệnh trên lá cây.\n\n"
                 "Bạn có thể:\n"
+                "- 🌿 **Chọn loại cây** ở ô bên dưới nếu biết trước — giúp AI đoán chính xác hơn nhiều\n"
                 "- 📎 **Upload ảnh** lá cây ở khung bên dưới, hoặc **dán link ảnh** vào ô chat\n"
                 "- 💬 **Hỏi thêm bằng chữ** sau khi có kết quả, ví dụ: \"cách chăm sóc thế nào\", "
                 "\"nên mua thuốc gì\"\n"
@@ -365,6 +430,13 @@ for msg in st.session_state.chat_history:
         if msg.get("image") is not None:
             st.image(msg["image"], width=250)
         st.markdown(msg["content"])
+
+# Ô chọn loại cây (tùy chọn) — giúp tăng độ chính xác bằng cách giới hạn phạm vi dự đoán
+plant_choice = st.selectbox(
+    "🌿 Loại cây (tùy chọn — chọn đúng sẽ giúp AI đoán chính xác hơn):",
+    ["🔍 Tự động (không chỉ định)"] + list(PLANT_PREFIXES.keys()),
+)
+selected_plant_prefix = PLANT_PREFIXES.get(plant_choice)  # None nếu chọn "Tự động"
 
 # Khu vực upload ảnh (nằm trên khung chat để dễ thao tác trên mobile)
 uploaded_file = st.file_uploader(
@@ -418,7 +490,9 @@ if trigger:
                 reply = answer_general_question(user_text)
         else:
             with st.spinner("Đang phân tích ảnh..."):
-                reply, heatmap_img = handle_user_input(image_path=image_path_to_use, url_text=user_text)
+                reply, heatmap_img = handle_user_input(
+                    image_path=image_path_to_use, url_text=user_text, plant_prefix=selected_plant_prefix
+                )
         st.markdown(reply)
         if heatmap_img is not None:
             st.image(
