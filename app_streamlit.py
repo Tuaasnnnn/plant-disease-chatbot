@@ -454,11 +454,11 @@ trigger = False
 image_path_to_use = None
 display_image = None
 
-if uploaded_file is not None and st.session_state.get("last_uploaded") != uploaded_file.name:
+if uploaded_file is not None and st.session_state.get("last_upload_key") != (uploaded_file.name, selected_plant_prefix):
     if uploaded_file.size > MAX_IMAGE_BYTES:
         st.error(f"⚠️ Ảnh quá lớn ({uploaded_file.size/1024/1024:.1f}MB). Giới hạn 8MB, vui lòng chọn ảnh nhỏ hơn.")
     else:
-        st.session_state.last_uploaded = uploaded_file.name
+        st.session_state.last_upload_key = (uploaded_file.name, selected_plant_prefix)
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(uploaded_file.name)[-1])
         tmp.write(uploaded_file.getvalue())
         tmp.close()
