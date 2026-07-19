@@ -414,7 +414,7 @@ if "chat_history" not in st.session_state:
             "content": (
                 "👋 Chào bạn! Mình là bot nhận diện bệnh trên lá cây.\n\n"
                 "Bạn có thể:\n"
-                "- 🌿 **Chọn loại cây** ở ô bên dưới nếu biết trước — giúp AI đoán chính xác hơn nhiều\n"
+                "- 🌿 **Chọn loại cây** ở ô bên dưới (bắt buộc trước khi upload ảnh) — giúp AI đoán chính xác hơn nhiều\n"
                 "- 📎 **Upload ảnh** lá cây ở khung bên dưới, hoặc **dán link ảnh** vào ô chat\n"
                 "- 💬 **Hỏi thêm bằng chữ** sau khi có kết quả, ví dụ: \"cách chăm sóc thế nào\", "
                 "\"nên mua thuốc gì\"\n"
@@ -432,19 +432,24 @@ for msg in st.session_state.chat_history:
             st.image(msg["image"], width=250)
         st.markdown(msg["content"])
 
-# Ô chọn loại cây (tùy chọn) — giúp tăng độ chính xác bằng cách giới hạn phạm vi dự đoán
+# Ô chọn loại cây — BẮT BUỘC phải chọn trước khi upload ảnh (không cho phép "tự động")
+PLACEHOLDER_CHOICE = "-- Vui lòng chọn loại cây --"
 plant_choice = st.selectbox(
-    "🌿 Loại cây (tùy chọn — chọn đúng sẽ giúp AI đoán chính xác hơn):",
-    ["🔍 Tự động (không chỉ định)"] + list(PLANT_PREFIXES.keys()),
+    "🌿 Loại cây (bắt buộc chọn trước khi upload ảnh):",
+    [PLACEHOLDER_CHOICE] + list(PLANT_PREFIXES.keys()),
 )
-selected_plant_prefix = PLANT_PREFIXES.get(plant_choice)  # None nếu chọn "Tự động"
+plant_selected = plant_choice != PLACEHOLDER_CHOICE
+selected_plant_prefix = PLANT_PREFIXES.get(plant_choice)  # None nếu chưa chọn
 
 # Khu vực upload ảnh (nằm trên khung chat để dễ thao tác trên mobile)
 uploaded_file = st.file_uploader(
-    "📎 Upload ảnh lá cây (hoặc dán link ảnh vào ô chat bên dưới)",
+    "📎 Upload ảnh lá cây (hoặc dán link ảnh vào ô chat bên dưới) — cần chọn loại cây ở trên trước",
     type=["jpg", "jpeg", "png", "webp"],
-    key="uploader"
+    key="uploader",
+    disabled=not plant_selected,
 )
+if not plant_selected:
+    st.info("👆 Vui lòng chọn loại cây ở trên trước khi upload ảnh.")
 
 user_text = st.chat_input(
     "Dán link ảnh, hỏi cách chăm sóc/mua thuốc, hoặc để trống nếu đã upload ảnh ở trên rồi bấm Enter..."
@@ -455,7 +460,7 @@ trigger = False
 image_path_to_use = None
 display_image = None
 
-if uploaded_file is not None and st.session_state.get("last_upload_key") != (uploaded_file.name, selected_plant_prefix):
+if uploaded_file is not None and plant_selected and st.session_state.get("last_upload_key") != (uploaded_file.name, selected_plant_prefix):
     if uploaded_file.size > MAX_IMAGE_BYTES:
         st.error(f"⚠️ Ảnh quá lớn ({uploaded_file.size/1024/1024:.1f}MB). Giới hạn 8MB, vui lòng chọn ảnh nhỏ hơn.")
     else:
@@ -485,7 +490,9 @@ if trigger:
     with st.chat_message("assistant"):
         has_image_url = bool(user_text and URL_REGEX.search(user_text))
         heatmap_img = None
-        if image_path_to_use is None and not has_image_url:
+        if has_image_url and not plant_selected:
+            reply = "⚠️ Bạn cần **chọn loại cây** ở ô phía trên trước khi mình phân tích ảnh nhé."
+        elif image_path_to_use is None and not has_image_url:
             # Không có ảnh/link ảnh -> đây là câu hỏi bằng chữ (chăm sóc, mua thuốc...)
             with st.spinner("Đang suy nghĩ..."):
                 reply = answer_general_question(user_text)
