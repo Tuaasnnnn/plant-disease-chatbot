@@ -231,11 +231,12 @@ def format_reply(results, filtered_by_plant=False):
     info = get_disease_info(top1_class)
     is_healthy = "healthy" in top1_class.lower()
 
-    # Cảnh báo khi độ tin cậy thấp — có thể ảnh không thuộc 14 loại cây model được huấn luyện
+    # Cảnh báo khi độ tin cậy thấp — KHÔNG nêu tên bệnh cụ thể để tránh gây hiểu lầm,
+    # dù chỉ là "gợi ý" cũng có thể khiến người dùng bị ảnh hưởng bởi thông tin không chắc chắn
     if top1_conf < CONFIDENCE_THRESHOLD:
         reply = (
-            f"⚠️ **Mình không đủ tự tin để xác định chính xác** (độ tin cậy chỉ {top1_conf*100:.1f}%, "
-            f"dự đoán gần nhất là \"{info['ten_viet']}\").\n\n"
+            f"⚠️ **Mình không đủ tự tin để xác định bệnh này** (độ tin cậy chỉ {top1_conf*100:.1f}%, "
+            f"dưới ngưỡng an toàn để đưa ra kết luận).\n\n"
             "Nguyên nhân có thể là:\n"
             "- Ảnh chụp không phải lá cây, hoặc chụp không rõ/quá xa/quá mờ\n"
             "- Cây trong ảnh **không thuộc 14 loại cây** mà mình được huấn luyện nhận diện: "
@@ -243,7 +244,7 @@ def format_reply(results, filtered_by_plant=False):
             "đậu tương, bí, dâu tây, cà chua\n"
             "- Ảnh chụp góc/ánh sáng khác nhiều so với dữ liệu huấn luyện\n\n"
             "💡 Bạn thử chụp lại rõ nét hơn, cận cảnh lá cây, hoặc nếu đây là loại cây ngoài "
-            "danh sách trên thì kết quả sẽ không đáng tin cậy — nên tham khảo thêm nguồn khác "
+            "danh sách trên thì mình không có đủ dữ liệu để nhận diện — nên tham khảo thêm nguồn khác "
             "hoặc chuyên gia nông nghiệp nhé.\n\n"
             "---\n_Lưu ý: đây là công cụ hỗ trợ tham khảo dựa trên AI, "
             "không thay thế chẩn đoán của chuyên gia nông nghiệp/bảo vệ thực vật._"
